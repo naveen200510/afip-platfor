@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+backend/venv/
+backend/__pycache__/
+backend/reports/
+frontend/dist/
+
+# Databases
+backend/*.db
+
+# Python files
+*.pyc
+
+# Local Environment / DS Store
+.env
+.DS_Store
+.vscode/
+.idea/
