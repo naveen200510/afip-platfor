@@ -53,6 +53,13 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, voiceTranscript, onV
     scrollToBottom();
   }, [messages]);
 
+  // Cancel speech when closing chatbot drawer
+  useEffect(() => {
+    if (!isOpen && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, [isOpen]);
+
   // Handle Voice Transcripts passed from Header
   useEffect(() => {
     if (voiceTranscript && voiceTranscript.trim()) {
@@ -87,6 +94,14 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, voiceTranscript, onV
           pdfPath: pdf_path
         }
       ]);
+
+      // Voice Output: Read answer aloud if speech synthesis is available
+      if ('speechSynthesis' in window) {
+        const speechText = answer.replace(/\*\*/g, '').replace(/^- /gm, '');
+        const utterance = new SpeechSynthesisUtterance(speechText);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      }
     } catch (err) {
       setMessages(prev => [
         ...prev,

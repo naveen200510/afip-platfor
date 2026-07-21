@@ -393,6 +393,158 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
                     }
                 }
 
+    # E. Interactive "What-If" Scenario Simulation
+    if any(w in prompt_lower for w in ["simulate", "what if", "scenario"]):
+        pcts = [float(p) for p in re.findall(r'(-?\d+(?:\.\d+)?)%', prompt_lower)]
+        if pcts:
+            rev_change = 0.0
+            fuel_change = 0.0
+            maint_change = 0.0
+            salary_change = 0.0
+            
+            for idx, pct in enumerate(pcts):
+                if any(w in prompt_lower for w in ["revenue", "income", "cargo", "marine"]):
+                    rev_change = pct / 100
+                elif "fuel" in prompt_lower:
+                    fuel_change = pct / 100
+                elif any(w in prompt_lower for w in ["maintenance", "repair"]):
+                    maint_change = pct / 100
+                elif any(w in prompt_lower for w in ["salary", "salaries", "payroll"]):
+                    salary_change = pct / 100
+            
+            records = db.query(models.FinancialData).filter(
+                ((models.FinancialData.year == 2024) & (models.FinancialData.month >= 4)) | 
+                ((models.FinancialData.year == 2025) & (models.FinancialData.month <= 3))
+            ).all()
+            
+            base_rev = sum(r.revenue for r in records) or 1.0
+            base_exp = sum(r.expenses for r in records) or 0.0
+            base_profit = base_rev - base_exp
+            
+            fuel_exp = db.query(func.sum(models.Transaction.amount)).filter(
+                models.Transaction.category == "Fuel",
+                models.Transaction.type == "Expense",
+                models.Transaction.date >= "2024-04-01",
+                models.Transaction.date <= "2025-03-31"
+            ).scalar() or 0.0
+            
+            maint_exp = db.query(func.sum(models.Transaction.amount)).filter(
+                models.Transaction.category == "Maintenance",
+                models.Transaction.type == "Expense",
+                models.Transaction.date >= "2024-04-01",
+                models.Transaction.date <= "2025-03-31"
+            ).scalar() or 0.0
+            
+            salary_exp = db.query(func.sum(models.Transaction.amount)).filter(
+                models.Transaction.category == "Salary",
+                models.Transaction.type == "Expense",
+                models.Transaction.date >= "2024-04-01",
+                models.Transaction.date <= "2025-03-31"
+            ).scalar() or 0.0
+            
+            sim_rev = base_rev * (1 + rev_change)
+            sim_fuel = fuel_exp * (1 + fuel_change)
+            sim_maint = maint_exp * (1 + maint_change)
+            sim_salary = salary_exp * (1 + salary_change)
+            
+            sim_exp = base_exp - fuel_exp - maint_exp - salary_exp + sim_fuel + sim_maint + sim_salary
+            sim_profit = sim_rev - sim_exp
+            
+            setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
+            symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
+            
+            ans = f"**What-If Scenario Simulation Results (FY 2024-25)**:\n\n"
+            ans += f"- **Base Surplus**: {format_usd(base_profit, db)} (Rev: {format_usd(base_rev, db)} | Exp: {format_usd(base_exp, db)})\n"
+            ans += f"- **Simulated Surplus**: **{format_usd(sim_profit, db)}** (Sim Rev: {format_usd(sim_rev, db)} | Sim Exp: {format_usd(sim_exp, db)})\n"
+            
+            changes_desc = []
+            if rev_change != 0: changes_desc.append(f"Revenue: {'+' if rev_change > 0 else ''}{rev_change*100:.0f}%")
+            if fuel_change != 0: changes_desc.append(f"Fuel: {'+' if fuel_change > 0 else ''}{fuel_change*100:.0f}%")
+            if maint_change != 0: changes_desc.append(f"Maintenance: {'+' if maint_change > 0 else ''}{maint_change*100:.0f}%")
+            if salary_change != 0: changes_desc.append(f"Salary: {'+' if salary_change > 0 else ''}{salary_change*100:.0f}%")
+            
+            ans += f"- **Parameters Applied**: {', '.join(changes_desc)}\n"
+            net_impact = sim_profit - base_profit
+            ans += f"- **Net Profit Impact**: **{'+' if net_impact >= 0 else ''}{format_usd(net_impact, db)}**."
+            
+            return {
+                "answer": ans,
+                "chart_config": {
+                    "type": "bar",
+                    "title": f"Surplus Projection Comparison ({symbol})",
+                    "data": [
+                        {"name": "Baseline Profit", "value": round(base_profit, 2)},
+                        {"name": "Simulated Profit", "value": round(sim_profit, 2)}
+                    ]
+                }
+            }
+
+    # F. Automated Budget Rebalancing and Overrun Resolution
+    if any(w in prompt_lower for w in ["rebalance", "resolve", "overrun"]):
+        budgets = db.query(models.Budget).filter(models.Budget.year == 2024).all()
+        if budgets:
+            dept_stats = {}
+            for b in budgets:
+                d_name = b.department.name.upper()
+                if d_name not in dept_stats:
+                    dept_stats[d_name] = {"allocated": 0.0, "spent": 0.0}
+                dept_stats[d_name]["allocated"] += b.allocated_amount
+                dept_stats[d_name]["spent"] += b.spent_amount
+                
+            deficits = []
+            surpluses = []
+            
+            for d_name, stats in dept_stats.items():
+                diff = stats["spent"] - stats["allocated"]
+                if diff > 0:
+                    deficits.append({"dept": d_name, "amount": diff})
+                elif diff < 0:
+                    surpluses.append({"dept": d_name, "amount": abs(diff)})
+                    
+            if deficits:
+                deficits.sort(key=lambda x: x["amount"], reverse=True)
+                surpluses.sort(key=lambda x: x["amount"], reverse=True)
+                
+                ans = f"**Automated Budget Rebalancing & Overrun Resolution Recommendations (FY 2024-25)**:\n\n"
+                ans += "Current Deficits Detected:\n"
+                for d in deficits:
+                    ans += f"- **{d['dept']}**: Deficit of **{format_usd(d['amount'], db)}** (Overrun)\n"
+                    
+                ans += "\nAvailable surpluses for rebalancing:\n"
+                for s in surpluses[:3]:
+                    ans += f"- **{s['dept']}**: Remaining allocation of **{format_usd(s['amount'], db)}**\n"
+                    
+                primary_deficit = deficits[0]
+                if surpluses:
+                    primary_surplus = surpluses[0]
+                    transfer_amt = min(primary_deficit["amount"], primary_surplus["amount"])
+                    ans += f"\n👉 **Proposed Adjustment Plan**: Transfer **{format_usd(transfer_amt, db)}** from **{primary_surplus['dept']}**'s underutilized budget to cover the deficit in **{primary_deficit['dept']}**. This will instantly resolve the budget overrun and stabilize the account limits."
+                else:
+                    ans += "\nNo departmental surpluses are available for transfer. Budget rationalization is recommended."
+                    
+                setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
+                symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
+                
+                chart_data = []
+                for d in deficits:
+                    chart_data.append({"name": f"{d['dept']} Deficit", "value": round(d["amount"], 2)})
+                for s in surpluses[:2]:
+                    chart_data.append({"name": f"{s['dept']} Surplus", "value": round(s["amount"], 2)})
+                    
+                return {
+                    "answer": ans,
+                    "chart_config": {
+                        "type": "bar",
+                        "title": f"Rebalancing Pools ({symbol})",
+                        "data": chart_data
+                    }
+                }
+            else:
+                return {
+                    "answer": "All port departments are currently operating within their allocated budget limits. No overruns to resolve.",
+                    "chart_config": None
+                }
+
     # A. Check for ratios, OER, profit margin, or financial health score
     if any(w in prompt_lower for w in ["ratio", "margin", "liquidity", "oer", "health score"]):
         yr = years_found[0] if years_found else 2024
