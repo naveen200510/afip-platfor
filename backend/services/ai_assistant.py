@@ -7,6 +7,7 @@ from sqlalchemy import func
 import models
 from services.report_generator import generate_pdf_report
 from services.health_score import calculate_financial_health_score
+from services.recommender import generate_ai_recommendations
 import google.generativeai as genai
 
 MONTH_MAP = {
