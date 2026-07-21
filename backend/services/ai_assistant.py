@@ -275,6 +275,64 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
     years_found = [int(y) for y in re.findall(r'\b(202\d)\b', prompt_lower)]
     depts = db.query(models.Department).all()
 
+    # Check if query asks for a monthly peak or drop (e.g. "which month", "lowest month", "highest month")
+    if "month" in prompt_lower:
+        is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min", "drop", "lowest", "became lowest"])
+        is_highest = any(w in prompt_lower for w in ["highest", "best", "maximum", "max", "peak", "most"])
+        
+        metric = "profit"
+        if any(w in prompt_lower for w in ["revenue", "income", "make", "earned"]):
+            metric = "revenue"
+        elif any(w in prompt_lower for w in ["spend", "expense", "cost", "outlay"]):
+            metric = "expenses"
+            
+        if is_least or is_highest:
+            yr = years_found[0] if years_found else 2024
+            records = db.query(models.FinancialData).filter(
+                ((models.FinancialData.year == yr) & (models.FinancialData.month >= 4)) | 
+                ((models.FinancialData.year == yr + 1) & (models.FinancialData.month <= 3))
+            ).all()
+            
+            if records:
+                month_names = {
+                    1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+                    7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"
+                }
+                
+                if metric == "revenue":
+                    records_sorted = sorted(records, key=lambda r: r.revenue)
+                elif metric == "expenses":
+                    records_sorted = sorted(records, key=lambda r: r.expenses)
+                else:
+                    records_sorted = sorted(records, key=lambda r: r.revenue - r.expenses)
+                    
+                target_record = records_sorted[0] if is_least else records_sorted[-1]
+                val = target_record.revenue if metric == "revenue" else (target_record.expenses if metric == "expenses" else (target_record.revenue - target_record.expenses))
+                m_name = month_names[target_record.month]
+                
+                setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
+                symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
+                
+                direction = "lowest" if is_least else "highest"
+                
+                ans = f"In FY {yr}-{str(yr+1)[2:]}, the month with the **{direction} {metric}** is **{m_name}** with a value of **{format_usd(val, db)}**."
+                
+                records_chrono = sorted(records, key=lambda r: r.month if r.month >= 4 else r.month + 12)
+                chart_data = []
+                for r in records_chrono:
+                    name_key = month_names[r.month][:3]
+                    val_key = r.revenue if metric == "revenue" else (r.expenses if metric == "expenses" else (r.revenue - r.expenses))
+                    chart_data.append({"name": name_key, "value": round(val_key, 2)})
+                    
+                return {
+                    "answer": ans,
+                    "chart_config": {
+                        "type": "bar",
+                        "title": f"Monthly {metric.capitalize()} Profile ({symbol})",
+                        "data": chart_data
+                    }
+                }
+
     # A. Check for ratios, OER, profit margin, or financial health score
     if any(w in prompt_lower for w in ["ratio", "margin", "liquidity", "oer", "health score"]):
         yr = years_found[0] if years_found else 2024
