@@ -13,6 +13,7 @@ import {
   Tooltip 
 } from 'recharts';
 import api from '../utils/api';
+import VoiceButton from './VoiceButton';
 
 interface ChatBotProps {
   isOpen: boolean;
@@ -241,7 +242,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, voiceTranscript, onV
       </div>
 
       {/* Input Box */}
-      <div style={{ padding: '20px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px' }}>
+      <div style={{ padding: '20px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <VoiceButton onTranscript={(text) => handleSendMessage(text)} />
         <input
           type="text"
           className="form-input"
@@ -262,7 +264,9 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, voiceTranscript, onV
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            height: '40px',
+            width: '40px'
           }}
         >
           <Send size={16} />
