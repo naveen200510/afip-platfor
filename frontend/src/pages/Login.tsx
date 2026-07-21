@@ -104,16 +104,16 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         <div style={{
           width: '100%',
           maxWidth: '440px',
-          background: 'rgba(255, 255, 255, 0.72)',
-          backdropFilter: 'blur(25px)',
-          border: '1px solid rgba(255, 255, 255, 0.45)',
+          background: 'rgba(255, 255, 255, 0.25)',
+          backdropFilter: 'blur(20px) saturate(140%)',
+          border: '1px solid rgba(255, 255, 255, 0.4)',
           borderRadius: '24px',
           padding: '40px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.15)',
+          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.3)',
           display: 'flex',
           flexDirection: 'column',
           gap: '24px',
-          color: '#1f2937',
+          color: '#092240',
           fontFamily: 'Outfit, Inter, sans-serif'
         }} className="animate-fade-in">
           
