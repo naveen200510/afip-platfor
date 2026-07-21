@@ -64,6 +64,38 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
     prompt_lower = user_prompt.lower()
     years_found = [int(y) for y in re.findall(r'\b(202\d)\b', prompt_lower)]
     
+    # 0. Conversational context / follow-up memory resolver
+    is_follow_up = any(w in prompt_lower for w in ["it", "that", "this", "they", "its", "so how", "generate in", "did it"]) or not any(w in prompt_lower for w in ["berth", "berths", "birth", "births", "customer", "client", "department", "departments", "kpi", "ratio", "margin", "health", "simulate", "what if"])
+    
+    if is_follow_up:
+        last_q = db.query(models.AIQuery).filter(models.AIQuery.user_id == user_id).order_by(models.AIQuery.created_at.desc()).first()
+        if last_q:
+            full_last_text = (last_q.prompt + " " + last_q.response).lower()
+            
+            if any(w in full_last_text for w in ["berth", "berths", "birth", "births", "bird", "birds"]):
+                if not any(w in prompt_lower for w in ["berth", "berths", "birth", "births"]):
+                    prompt_lower += " berth"
+                berth_names = [r[0] for r in db.query(models.Transaction.berth).distinct().all() if r[0]]
+                for b in berth_names:
+                    if b.lower() in full_last_text and b.lower() not in prompt_lower:
+                        prompt_lower += f" {b.lower()}"
+                        
+            elif any(w in full_last_text for w in ["client", "customer", "invoices"]):
+                if not any(w in prompt_lower for w in ["client", "customer"]):
+                    prompt_lower += " client"
+                client_names = [r[0] for r in db.query(models.Transaction.client).distinct().all() if r[0]]
+                for c in client_names:
+                    if c.lower() in full_last_text and c.lower() not in prompt_lower:
+                        prompt_lower += f" {c.lower()}"
+                        
+            elif any(w in full_last_text for w in ["department", "departments", "budget", "spend"]):
+                if not any(w in prompt_lower for w in ["department", "departments"]):
+                    prompt_lower += " department"
+                dept_names = [r[0] for r in db.query(models.Department.name).distinct().all() if r[0]]
+                for d in dept_names:
+                    if d.lower() in full_last_text and d.lower() not in prompt_lower:
+                        prompt_lower += f" {d.lower()}"
+    
     # 1. Check if user requested a PDF report
     if "pdf" in prompt_lower or "report" in prompt_lower or "download document" in prompt_lower:
         # Create reports folder if not exists
