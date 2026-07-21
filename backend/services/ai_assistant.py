@@ -417,10 +417,17 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
 
     # Check if query asks for a department-level comparison (e.g. "which department spends the most", "department with highest budget")
     if "department" in prompt_lower or "departments" in prompt_lower:
-        is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
-        is_highest = any(w in prompt_lower for w in ["highest", "best", "maximum", "max", "peak", "most"])
-        
-        if is_least or is_highest:
+        dept_names = [r[0] for r in db.query(models.Department.name).distinct().all() if r[0]]
+        matched_dept = None
+        for d in dept_names:
+            if d.lower() in prompt_lower:
+                matched_dept = d
+                break
+                
+        if not matched_dept:
+            is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
+            is_highest = any(w in prompt_lower for w in ["highest", "best", "maximum", "max", "peak", "most"])
+            
             yr = years_found[0] if years_found else 2024
             spent_data = db.query(
                 models.Department.name,
@@ -433,15 +440,21 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
             
             if spent_data:
                 spent_data_sorted = sorted(spent_data, key=lambda x: x[1])
-                target_dept, target_val = spent_data_sorted[0] if is_least else spent_data_sorted[-1]
-                
                 setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
                 symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
                 
-                direction = "least" if is_least else "most"
                 time_str = f"in FY {yr}-{str(yr+1)[2:]}"
                 
-                ans = f"The department that spent the **{direction} money** {time_str} is **{target_dept.upper()}**, with a total expenditure of **{format_usd(target_val, db)}**."
+                if is_least:
+                    target_dept, target_val = spent_data_sorted[0]
+                    ans = f"The department that spent the **least money** {time_str} is **{target_dept.upper()}**, with a total expenditure of **{format_usd(target_val, db)}**."
+                elif is_highest:
+                    target_dept, target_val = spent_data_sorted[-1]
+                    ans = f"The department that spent the **most money** {time_str} is **{target_dept.upper()}**, with a total expenditure of **{format_usd(target_val, db)}**."
+                else:
+                    ans = f"Here is the department expenditure breakdown {time_str}:\n\n"
+                    for d_name, val in reversed(spent_data_sorted):
+                        ans += f"- **{d_name.upper()}**: Spent **{format_usd(val, db)}**\n"
                 
                 chart_data = [{"name": r[0].upper(), "value": round(r[1], 2)} for r in spent_data]
                 chart_data.sort(key=lambda x: x["value"], reverse=True)
