@@ -65,6 +65,11 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
     years_found = [int(y) for y in re.findall(r'\b(202\d)\b', prompt_lower)]
     
     # 0. Conversational context / follow-up memory resolver
+    if "previous year" in prompt_lower or "last year" in prompt_lower or "past year" in prompt_lower:
+        if not years_found:
+            years_found = [2023]
+
+
     is_follow_up = any(w in prompt_lower for w in ["it", "that", "this", "they", "its", "so how", "generate in", "did it"]) or not any(w in prompt_lower for w in ["berth", "berths", "birth", "births", "customer", "client", "department", "departments", "kpi", "ratio", "margin", "health", "simulate", "what if"])
     
     if is_follow_up:
@@ -76,25 +81,28 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
                 if not any(w in prompt_lower for w in ["berth", "berths", "birth", "births"]):
                     prompt_lower += " berth"
                 berth_names = [r[0] for r in db.query(models.Transaction.berth).distinct().all() if r[0]]
-                for b in berth_names:
-                    if b.lower() in full_last_text and b.lower() not in prompt_lower:
-                        prompt_lower += f" {b.lower()}"
+                matched_berths = [b for b in berth_names if b.lower() in full_last_text]
+                if len(matched_berths) == 1:
+                    if matched_berths[0].lower() not in prompt_lower:
+                        prompt_lower += f" {matched_berths[0].lower()}"
                         
             elif any(w in full_last_text for w in ["client", "customer", "invoices"]):
                 if not any(w in prompt_lower for w in ["client", "customer"]):
                     prompt_lower += " client"
                 client_names = [r[0] for r in db.query(models.Transaction.client).distinct().all() if r[0]]
-                for c in client_names:
-                    if c.lower() in full_last_text and c.lower() not in prompt_lower:
-                        prompt_lower += f" {c.lower()}"
+                matched_clients = [c for c in client_names if c.lower() in full_last_text]
+                if len(matched_clients) == 1:
+                    if matched_clients[0].lower() not in prompt_lower:
+                        prompt_lower += f" {matched_clients[0].lower()}"
                         
             elif any(w in full_last_text for w in ["department", "departments", "budget", "spend"]):
                 if not any(w in prompt_lower for w in ["department", "departments"]):
                     prompt_lower += " department"
                 dept_names = [r[0] for r in db.query(models.Department.name).distinct().all() if r[0]]
-                for d in dept_names:
-                    if d.lower() in full_last_text and d.lower() not in prompt_lower:
-                        prompt_lower += f" {d.lower()}"
+                matched_depts = [d for d in dept_names if d.lower() in full_last_text]
+                if len(matched_depts) == 1:
+                    if matched_depts[0].lower() not in prompt_lower:
+                        prompt_lower += f" {matched_depts[0].lower()}"
     
     # 1. Check if user requested a PDF report
     if "pdf" in prompt_lower or "report" in prompt_lower or "download document" in prompt_lower:
@@ -352,8 +360,7 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
         }
 
     # 3. Dynamic Local NLP Query Compiler (translating text to DB queries)
-    # Extract year using word boundaries
-    years_found = [int(y) for y in re.findall(r'\b(202\d)\b', prompt_lower)]
+    # Year already extracted at start
     depts = db.query(models.Department).all()
 
     # Check for suggestions, recommendations, advice, or ways to increase/improve metrics
@@ -858,8 +865,7 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
                     }
                 }
 
-    # Extract year using word boundaries
-    years_found = [int(y) for y in re.findall(r'\b(202\d)\b', prompt_lower)]
+    # Year already extracted at start
     
     # Extract month matching whole words only
     month_found = None
