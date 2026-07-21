@@ -364,7 +364,7 @@ def simulate_scenario(
     }
 
 @router.get("/departments")
-def get_department_analytics(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+def get_department_analytics(year: int = 2024, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     Department Analytics (Module 17) - Separate KPIs, Forecast, and Ranking
     """
@@ -372,22 +372,29 @@ def get_department_analytics(db: Session = Depends(database.get_db), current_use
     analytics = []
     
     for dept in depts:
-        # Sum expenses & revenue
         expense_sum = db.query(func.sum(models.Transaction.amount)).filter(
             models.Transaction.department_id == dept.id,
-            models.Transaction.type == "Expense"
+            models.Transaction.type == "Expense",
+            models.Transaction.date >= f"{year}-04-01",
+            models.Transaction.date <= f"{year+1}-03-31"
         ).scalar() or 0.0
 
         revenue_sum = db.query(func.sum(models.Transaction.amount)).filter(
             models.Transaction.department_id == dept.id,
-            models.Transaction.type == "Revenue"
+            models.Transaction.type == "Revenue",
+            models.Transaction.date >= f"{year}-04-01",
+            models.Transaction.date <= f"{year+1}-03-31"
         ).scalar() or 0.0
         
-        # Calculate budget
-        alloc = db.query(func.sum(models.Budget.allocated_amount)).filter(models.Budget.department_id == dept.id).scalar() or 0.0
-        spent = db.query(func.sum(models.Budget.spent_amount)).filter(models.Budget.department_id == dept.id).scalar() or 0.0
+        alloc = db.query(func.sum(models.Budget.allocated_amount)).filter(
+            models.Budget.department_id == dept.id,
+            models.Budget.year == year
+        ).scalar() or 0.0
+        spent = db.query(func.sum(models.Budget.spent_amount)).filter(
+            models.Budget.department_id == dept.id,
+            models.Budget.year == year
+        ).scalar() or 0.0
         
-        # Simple forecast for 2025-26
         future_forecast = forecast_department_spending(db, dept.id)
         forecast_total = sum(f["value"] for f in future_forecast) if future_forecast else (spent * 1.05)
 
