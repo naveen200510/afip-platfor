@@ -383,7 +383,47 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
                 "chart_config": None
             }
 
-    # Check if query asks for a monthly peak or drop (e.g. "which month", "lowest month", "highest month")
+    # Check if query asks for a department-level comparison (e.g. "which department spends the most", "department with highest budget")
+    if "department" in prompt_lower or "departments" in prompt_lower:
+        is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
+        is_highest = any(w in prompt_lower for w in ["highest", "best", "maximum", "max", "peak", "most"])
+        
+        if is_least or is_highest:
+            yr = years_found[0] if years_found else 2024
+            spent_data = db.query(
+                models.Department.name,
+                func.sum(models.Transaction.amount).label("total")
+            ).join(models.Transaction).filter(
+                models.Transaction.type == "Expense",
+                models.Transaction.date >= f"{yr}-04-01",
+                models.Transaction.date <= f"{yr+1}-03-31"
+            ).group_by(models.Department.name).all()
+            
+            if spent_data:
+                spent_data_sorted = sorted(spent_data, key=lambda x: x[1])
+                target_dept, target_val = spent_data_sorted[0] if is_least else spent_data_sorted[-1]
+                
+                setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
+                symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
+                
+                direction = "least" if is_least else "most"
+                time_str = f"in FY {yr}-{str(yr+1)[2:]}"
+                
+                ans = f"The department that spent the **{direction} money** {time_str} is **{target_dept.upper()}**, with a total expenditure of **{format_usd(target_val, db)}**."
+                
+                chart_data = [{"name": r[0].upper(), "value": round(r[1], 2)} for r in spent_data]
+                chart_data.sort(key=lambda x: x["value"], reverse=True)
+                
+                return {
+                    "answer": ans,
+                    "chart_config": {
+                        "type": "bar",
+                        "title": f"Department Expenditures ({symbol})",
+                        "data": chart_data
+                    }
+                }
+
+    # Check if query asks for a monthly profile comparison
     if "month" in prompt_lower:
         is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min", "drop", "lowest", "became lowest"])
         is_highest = any(w in prompt_lower for w in ["highest", "best", "maximum", "max", "peak", "most"])
