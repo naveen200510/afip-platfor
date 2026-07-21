@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Bell, MessageSquare, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Bell, MessageSquare, ShieldAlert, Sun, Moon } from 'lucide-react';
 import VoiceButton from './VoiceButton';
 import api from '../utils/api';
 
@@ -10,11 +10,41 @@ interface HeaderProps {
   onToggleChat: () => void;
 }
 
+interface Toast {
+  id: number;
+  type: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  dismissing?: boolean;
+}
+
 const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onToggleChat }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [alerts, setAlerts] = useState<any[]>([]);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const isFirstLoad = useRef(true);
+  const lastAlertId = useRef(0);
+
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('afip_theme') as 'dark' | 'light') || 'dark';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.add('theme-light');
+    } else {
+      root.classList.remove('theme-light');
+    }
+    localStorage.setItem('afip_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
 
   const formatAlertMessage = (msg: string) => {
     const cur = localStorage.getItem('afip_currency') || 'USD';
@@ -40,11 +70,64 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
     });
   };
 
+  const triggerDismiss = (id: number) => {
+    setTimeout(() => {
+      // Mark as dismissing first to trigger fade out animation
+      setToasts(prev => prev.map(t => t.id === id ? { ...t, dismissing: true } : t));
+      
+      // Remove from state after animation completes (400ms)
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, 400);
+    }, 5000);
+  };
+
   const fetchAlerts = async () => {
     try {
       const response = await api.get('/admin/alerts');
-      setAlerts(response.data);
-      setUnreadCount(response.data.filter((a: any) => !a.is_read).length);
+      const data = response.data;
+      setAlerts(data);
+      setUnreadCount(data.filter((a: any) => !a.is_read).length);
+
+      // Extract new alerts for toasts
+      if (data.length > 0) {
+        const sortedData = [...data].sort((a: any, b: any) => a.id - b.id);
+        const maxId = sortedData[sortedData.length - 1].id;
+
+        if (isFirstLoad.current) {
+          // First load: show up to 3 unread alerts
+          const initialToasts = sortedData
+            .filter((a: any) => !a.is_read)
+            .slice(-3)
+            .map((a: any) => ({
+              id: a.id,
+              type: a.type,
+              message: a.message,
+              isRead: a.is_read,
+              createdAt: a.created_at
+            }));
+          
+          if (initialToasts.length > 0) {
+            setToasts(initialToasts);
+            initialToasts.forEach((t: any) => triggerDismiss(t.id));
+          }
+          isFirstLoad.current = false;
+        } else if (maxId > lastAlertId.current) {
+          // New alert detected! Add it to toasts
+          const newAlerts = sortedData.filter((a: any) => a.id > lastAlertId.current);
+          newAlerts.forEach((a: any) => {
+            setToasts(prev => [...prev, {
+              id: a.id,
+              type: a.type,
+              message: a.message,
+              isRead: a.is_read,
+              createdAt: a.created_at
+            }]);
+            triggerDismiss(a.id);
+          });
+        }
+        lastAlertId.current = maxId;
+      }
     } catch (err) {
       console.error('Error fetching alerts:', err);
     }
@@ -82,7 +165,7 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
     <header className="app-header">
       {/* Title */}
       <div>
-        <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#ffffff' }}>{title}</h2>
+        <h2 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h2>
       </div>
 
       {/* Global Search and Tools */}
@@ -102,6 +185,26 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
 
         {/* Voice Assistant Trigger */}
         <VoiceButton onTranscript={onVoiceCommand} />
+
+        {/* Theme Toggle Switch */}
+        <button
+          onClick={toggleTheme}
+          style={{
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid var(--border-color)',
+            padding: '10px',
+            borderRadius: '50%',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.3s ease'
+          }}
+          title={theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
 
         {/* Alerts and Notifications */}
         <div style={{ position: 'relative' }}>
@@ -152,7 +255,7 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
               width: '320px',
               maxHeight: '400px',
               overflowY: 'auto',
-              background: '#0c1221',
+              background: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
               borderRadius: '12px',
               boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
@@ -167,7 +270,7 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
                 borderBottom: '1px solid var(--border-color)',
                 marginBottom: '10px'
               }}>
-                <h4 style={{ fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
                   <ShieldAlert size={14} color="#f43f5e" /> Real-time Alerts
                 </h4>
                 <span style={{ fontSize: '11px', color: '#9ca3af' }}>{alerts.length} total</span>
@@ -203,7 +306,7 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
                           {new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <p style={{ color: '#e5e7eb', lineHeight: 1.4 }}>{formatAlertMessage(alert.message)}</p>
+                      <p style={{ color: 'var(--text-primary)', lineHeight: 1.4 }}>{formatAlertMessage(alert.message)}</p>
                       {!alert.is_read && (
                         <span style={{ fontSize: '9px', color: '#00f2fe', textAlign: 'right', marginTop: '2px' }}>
                           Mark as read
@@ -238,6 +341,35 @@ const Header: React.FC<HeaderProps> = ({ title, onSearch, onVoiceCommand, onTogg
           <MessageSquare size={16} />
           AI Copilot
         </button>
+      </div>
+
+      {/* Floating Toast Notifications Overlay */}
+      <div style={{
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        pointerEvents: 'none'
+      }}>
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`toast-alert-card ${t.dismissing ? 'dismissing' : ''} ${t.type !== 'Budget Overrun' ? 'warning' : ''}`}
+          >
+            <ShieldAlert size={20} color={t.type === 'Budget Overrun' ? '#f43f5e' : '#f59e0b'} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: t.type === 'Budget Overrun' ? '#f43f5e' : '#f59e0b' }}>
+                {t.type}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                {formatAlertMessage(t.message)}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </header>
   );

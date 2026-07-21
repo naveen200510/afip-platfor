@@ -56,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLogout }) 
           <Brain size={22} color="#ffffff" />
         </div>
         <div>
-          <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff', lineHeight: 1 }}>AFIP AI</h1>
+          <h1 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>AFIP AI</h1>
           <span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>CFO Intelligence</span>
         </div>
       </div>
