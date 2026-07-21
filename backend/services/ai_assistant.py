@@ -87,47 +87,79 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
     # 2. Hardcoded specific dashboard questions (matching charts)
     # Check if user requested Berth revenue / "bird" revenue
     if any(w in prompt_lower for w in ["berth", "berths", "birth", "births", "bird", "birds", "dock", "jetty", "jetties"]):
-        berth_data = db.query(
+        setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
+        symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
+        
+        berth_names = [r[0] for r in db.query(models.Transaction.berth).distinct().all() if r[0]]
+        matched_berth = None
+        for b in berth_names:
+            if b.lower() in prompt_lower:
+                matched_berth = b
+                break
+                
+        yr = years_found[0] if years_found else None
+        
+        query = db.query(
             models.Transaction.berth,
             func.sum(models.Transaction.amount).label("total")
         ).filter(
             models.Transaction.type == "Revenue",
             models.Transaction.berth != None,
             models.Transaction.berth != ""
-        ).group_by(models.Transaction.berth).order_by(func.sum(models.Transaction.amount).desc()).all()
+        )
+        
+        if yr:
+            query = query.filter(models.Transaction.date >= f"{yr}-04-01", models.Transaction.date <= f"{yr+1}-03-31")
+        if matched_berth:
+            query = query.filter(models.Transaction.berth == matched_berth)
+            
+        berth_data = query.group_by(models.Transaction.berth).order_by(func.sum(models.Transaction.amount).desc()).all()
         
         if berth_data:
-            # Resolve active symbol
-            setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
-            symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
-            
-            is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
-            if is_least:
-                least_berth, least_val = berth_data[-1]
-                # bottom 5 berths, sorted descending
-                chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in berth_data[-5:]]
+            if matched_berth:
+                val = berth_data[0][1]
+                time_str = f"in FY {yr}-{str(yr+1)[2:]}" if yr else "overall"
                 return {
-                    "answer": f"The physical berth with the least revenue is **{least_berth}**, generating a total of **{format_usd(least_val, db)}** in billing collections.",
-                    "chart_config": {
-                        "type": "bar",
-                        "title": f"Lowest Berth Revenues ({symbol})",
-                        "data": chart_data
-                    }
+                    "answer": f"The berth **{matched_berth}** generated a total of **{format_usd(val, db)}** {time_str} in billing collections.",
+                    "chart_config": None
                 }
             else:
-                top_berth, top_val = berth_data[0]
-                chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in berth_data[:5]]
-                return {
-                    "answer": f"The physical berth with the highest revenue is **{top_berth}**, generating a total of **{format_usd(top_val, db)}** in billing collections.",
-                    "chart_config": {
-                        "type": "bar",
-                        "title": f"Top Berth Revenues ({symbol})",
-                        "data": chart_data
+                is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
+                time_str = f"in FY {yr}-{str(yr+1)[2:]}" if yr else "overall"
+                if is_least:
+                    least_berth, least_val = berth_data[-1]
+                    chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in berth_data[-5:]]
+                    return {
+                        "answer": f"The physical berth with the least revenue {time_str} is **{least_berth}**, generating a total of **{format_usd(least_val, db)}** in billing collections.",
+                        "chart_config": {
+                            "type": "bar",
+                            "title": f"Lowest Berth Revenues ({symbol})",
+                            "data": chart_data
+                        }
                     }
-                }
+                else:
+                    top_berth, top_val = berth_data[0]
+                    chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in berth_data[:5]]
+                    return {
+                        "answer": f"The physical berth with the highest revenue {time_str} is **{top_berth}**, generating a total of **{format_usd(top_val, db)}** in billing collections.",
+                        "chart_config": {
+                            "type": "bar",
+                            "title": f"Top Berth Revenues ({symbol})",
+                            "data": chart_data
+                        }
+                    }
 
     if "customer" in prompt_lower or "client" in prompt_lower:
-        client_data = db.query(
+        client_names = [r[0] for r in db.query(models.Transaction.client).distinct().all() if r[0]]
+        matched_client = None
+        for c in client_names:
+            if c.lower() in prompt_lower:
+                matched_client = c
+                break
+                
+        yr = years_found[0] if years_found else None
+        
+        query = db.query(
             models.Transaction.client,
             func.sum(models.Transaction.amount).label("total")
         ).filter(
@@ -135,36 +167,51 @@ def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
             models.Transaction.client != None,
             models.Transaction.client != "Merchant Client",
             models.Transaction.client != ""
-        ).group_by(models.Transaction.client).order_by(func.sum(models.Transaction.amount).desc()).all()
+        )
+        
+        if yr:
+            query = query.filter(models.Transaction.date >= f"{yr}-04-01", models.Transaction.date <= f"{yr+1}-03-31")
+        if matched_client:
+            query = query.filter(models.Transaction.client == matched_client)
+            
+        client_data = query.group_by(models.Transaction.client).order_by(func.sum(models.Transaction.amount).desc()).all()
         
         if client_data:
-            # Resolve active symbol
             setting = db.query(models.Setting).filter(models.Setting.user_id == 1).first()
             symbol = "₹" if setting and setting.currency == "INR" else ("€" if setting and setting.currency == "EUR" else "$")
             
-            is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
-            if is_least:
-                least_client, least_val = client_data[-1]
-                chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in client_data[-5:]]
+            if matched_client:
+                val = client_data[0][1]
+                time_str = f"in FY {yr}-{str(yr+1)[2:]}" if yr else "overall"
                 return {
-                    "answer": f"Your lowest revenue-generating client is **{least_client}** with a total contribution of **{format_usd(least_val, db)}**.",
-                    "chart_config": {
-                        "type": "bar",
-                        "title": f"Lowest Client Revenues ({symbol})",
-                        "data": chart_data
-                    }
+                    "answer": f"The client **{matched_client}** contributed a total of **{format_usd(val, db)}** {time_str} in revenue.",
+                    "chart_config": None
                 }
             else:
-                top_client, top_val = client_data[0]
-                chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in client_data[:5]]
-                return {
-                    "answer": f"Your top revenue-generating client is **{top_client}** with a total contribution of **{format_usd(top_val, db)}**.",
-                    "chart_config": {
-                        "type": "bar",
-                        "title": f"Top Client Revenues ({symbol})",
-                        "data": chart_data
+                is_least = any(w in prompt_lower for w in ["least", "lowest", "worst", "minimum", "min"])
+                time_str = f"in FY {yr}-{str(yr+1)[2:]}" if yr else "overall"
+                if is_least:
+                    least_client, least_val = client_data[-1]
+                    chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in client_data[-5:]]
+                    return {
+                        "answer": f"Your lowest revenue-generating client {time_str} is **{least_client}** with a total contribution of **{format_usd(least_val, db)}**.",
+                        "chart_config": {
+                            "type": "bar",
+                            "title": f"Lowest Client Revenues ({symbol})",
+                            "data": chart_data
+                        }
                     }
-                }
+                else:
+                    top_client, top_val = client_data[0]
+                    chart_data = [{"name": r[0], "value": round(r[1], 2)} for r in client_data[:5]]
+                    return {
+                        "answer": f"Your top revenue-generating client {time_str} is **{top_client}** with a total contribution of **{format_usd(top_val, db)}**.",
+                        "chart_config": {
+                            "type": "bar",
+                            "title": f"Top Client Revenues ({symbol})",
+                            "data": chart_data
+                        }
+                    }
 
     if "why did profit decrease" in prompt_lower or "profit decrease" in prompt_lower or "decrease in profit" in prompt_lower:
         years_profit = db.query(
