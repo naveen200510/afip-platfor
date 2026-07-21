@@ -62,6 +62,7 @@ def format_usd(val: float, db: Session = None) -> str:
 
 def run_ai_query(db: Session, user_prompt: str, user_id: int = 1) -> dict:
     prompt_lower = user_prompt.lower()
+    years_found = [int(y) for y in re.findall(r'\b(202\d)\b', prompt_lower)]
     
     # 1. Check if user requested a PDF report
     if "pdf" in prompt_lower or "report" in prompt_lower or "download document" in prompt_lower:
